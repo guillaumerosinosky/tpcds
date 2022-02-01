@@ -37,12 +37,17 @@ import org.apache.flink.table.tpcds.schema.TpcdsSchemaProvider;
 import org.apache.flink.table.tpcds.stats.TpcdsStatsProvider;
 import org.apache.flink.table.types.utils.TypeConversions;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.io.InputStream;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
+
+import io.minio.MinioClient;
+import io.minio.GetObjectArgs;
+import io.minio.GetObjectResponse;
+import io.minio.errors.MinioException;
 
 /** End-to-end test for TPC-DS. */
 public class TpcdsTestProgramS3 {
@@ -91,6 +96,8 @@ public class TpcdsTestProgramS3 {
     private static final String COL_DELIMITER = "|";
     private static final String FILE_SEPARATOR = "/";
 
+    private static MinioClient s3Client;
+
     public static void main(String[] args) throws Exception {
         ParameterTool params = ParameterTool.fromArgs(args);
         String sourceTablePath = params.getRequired("sourceTablePath");
@@ -98,17 +105,21 @@ public class TpcdsTestProgramS3 {
         String sinkTablePath = params.getRequired("sinkTablePath");
         Boolean useTableStats = params.getBoolean("useTableStats");
         TableEnvironment tableEnvironment = prepareTableEnv(sourceTablePath, useTableStats);
+        try {
+
+            s3Client =
+                MinioClient.builder()
+                    .endpoint("http://minio.manager:9000")
+                    .credentials("root", "rootroot")
+                    .build();
+        } catch(Exception exception){}
 
         // execute TPC-DS queries
         for (String queryId : TPCDS_QUERIES) {
-            if (queryId.compareTo("15") != 0) {
-                continue;
-            }
             System.out.println("[INFO]Run TPC-DS query " + queryId + " ...");
             String queryName = QUERY_PREFIX + queryId + QUERY_SUFFIX;
             String queryFilePath = queryPath + FILE_SEPARATOR + queryName;
-            String queryString =
-                    "select ca_zip ,sum(cs_sales_price) from catalog_sales ,customer ,customer_address ,date_dim where cs_bill_customer_sk = c_customer_sk and c_current_addr_sk = ca_address_sk  and ( substr(ca_zip,1,5) in ('85669', '86197','88274','83405','86475', '85392', '85460', '80348', '81792') or ca_state in ('CA','WA','GA') or cs_sales_price > 500) and cs_sold_date_sk = d_date_sk and d_qoy = 2 and d_year = 2001 group by ca_zip order by ca_zip limit 100";
+            String queryString = loadFile2String(queryFilePath);
             Table resultTable = tableEnvironment.sqlQuery(queryString);
 
             // register sink table
@@ -201,8 +212,16 @@ public class TpcdsTestProgramS3 {
 
     private static String loadFile2String(String filePath) throws Exception {
         StringBuilder stringBuilder = new StringBuilder();
-        Stream<String> stream = Files.lines(Paths.get(filePath), StandardCharsets.UTF_8);
-        stream.forEach(s -> stringBuilder.append(s).append('\n'));
+        try (InputStream stream = s3Client.getObject(
+            GetObjectArgs.builder()
+            .bucket("workloads")
+            .object(filePath)
+            .build())) {
+            BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
+            reader.lines().forEach(s -> stringBuilder.append(s).append('\n'));
+        }
+
         return stringBuilder.toString();
+        
     }
 }
