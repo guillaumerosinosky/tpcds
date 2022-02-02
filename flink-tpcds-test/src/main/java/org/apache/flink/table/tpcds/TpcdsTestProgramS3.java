@@ -122,7 +122,6 @@ public class TpcdsTestProgramS3 {
             String queryName = QUERY_PREFIX + queryId + QUERY_SUFFIX;
             String queryFilePath = queryPath + FILE_SEPARATOR + queryName;
             String queryString = loadFile2String(queryFilePath);
-            System.out.println(queryString);
             Table resultTable = tableEnvironment.sqlQuery(queryString);
 
             // register sink table
