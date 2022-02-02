@@ -41,13 +41,11 @@ import java.io.InputStream;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
 
 import io.minio.MinioClient;
 import io.minio.GetObjectArgs;
-import io.minio.GetObjectResponse;
-import io.minio.errors.MinioException;
 
 /** End-to-end test for TPC-DS. */
 public class TpcdsTestProgramS3 {
@@ -104,6 +102,7 @@ public class TpcdsTestProgramS3 {
         String queryPath = params.getRequired("queryPath");
         String sinkTablePath = params.getRequired("sinkTablePath");
         Boolean useTableStats = params.getBoolean("useTableStats");
+        String querySelector = params.get("querySelector", "");
         TableEnvironment tableEnvironment = prepareTableEnv(sourceTablePath, useTableStats);
         try {
 
@@ -114,12 +113,16 @@ public class TpcdsTestProgramS3 {
                     .build();
         } catch(Exception exception){}
 
+        // Read queries from arg or execute all
+        List<String> queries = querySelector.isEmpty() ? TPCDS_QUERIES : parseQuerySelector(querySelector);
+
         // execute TPC-DS queries
-        for (String queryId : TPCDS_QUERIES) {
+        for (String queryId : queries) {
             System.out.println("[INFO]Run TPC-DS query " + queryId + " ...");
             String queryName = QUERY_PREFIX + queryId + QUERY_SUFFIX;
             String queryFilePath = queryPath + FILE_SEPARATOR + queryName;
             String queryString = loadFile2String(queryFilePath);
+            System.out.println(queryString);
             Table resultTable = tableEnvironment.sqlQuery(queryString);
 
             // register sink table
@@ -220,8 +223,21 @@ public class TpcdsTestProgramS3 {
             BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
             reader.lines().forEach(s -> stringBuilder.append(s).append('\n'));
         }
-
         return stringBuilder.toString();
         
+    }
+
+    private static List<String> parseQuerySelector(String querySelector) {
+        ArrayList<String> queries = new ArrayList<>();
+        String[] splitted = querySelector.split(",");
+        for (String query :
+                splitted) {
+            if (TPCDS_QUERIES.contains(query)) {
+                queries.add(query);
+            } else {
+                System.out.println("Skipping non-matching query: " + query);
+            }
+        }
+        return queries;
     }
 }
