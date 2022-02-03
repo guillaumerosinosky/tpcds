@@ -50,42 +50,40 @@ import io.minio.GetObjectArgs;
 /** End-to-end test for TPC-DS. */
 public class TpcdsTestProgramS3 {
 
-    private static final List<String> TPCDS_TABLES =
-            Arrays.asList(
-                    "catalog_sales",
-                    "catalog_returns",
-                    "inventory",
-                    "store_sales",
-                    "store_returns",
-                    "web_sales",
-                    "web_returns",
-                    "call_center",
-                    "catalog_page",
-                    "customer",
-                    "customer_address",
-                    "customer_demographics",
-                    "date_dim",
-                    "household_demographics",
-                    "income_band",
-                    "item",
-                    "promotion",
-                    "reason",
-                    "ship_mode",
-                    "store",
-                    "time_dim",
-                    "warehouse",
-                    "web_page",
-                    "web_site");
-    private static final List<String> TPCDS_QUERIES =
-            Arrays.asList(
-                    "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14a",
-                    "14b", "15", "16", "17", "18", "19", "20", "21", "22", "23a", "23b", "24a",
-                    "24b", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36",
-                    "37", "38", "39a", "39b", "40", "41", "42", "43", "44", "45", "46", "47", "48",
-                    "49", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59", "60", "61",
-                    "62", "63", "64", "65", "66", "67", "68", "69", "70", "71", "72", "73", "74",
-                    "75", "76", "77", "78", "79", "80", "81", "82", "83", "84", "85", "86", "87",
-                    "88", "89", "90", "91", "92", "93", "94", "95", "96", "97", "98", "99");
+    private static final List<String> TPCDS_TABLES = Arrays.asList(
+            "catalog_sales",
+            "catalog_returns",
+            "inventory",
+            "store_sales",
+            "store_returns",
+            "web_sales",
+            "web_returns",
+            "call_center",
+            "catalog_page",
+            "customer",
+            "customer_address",
+            "customer_demographics",
+            "date_dim",
+            "household_demographics",
+            "income_band",
+            "item",
+            "promotion",
+            "reason",
+            "ship_mode",
+            "store",
+            "time_dim",
+            "warehouse",
+            "web_page",
+            "web_site");
+    private static final List<String> TPCDS_QUERIES = Arrays.asList(
+            "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14a",
+            "14b", "15", "16", "17", "18", "19", "20", "21", "22", "23a", "23b", "24a",
+            "24b", "25", "26", "27", "28", "29", "30", "31", "32", "33", "34", "35", "36",
+            "37", "38", "39a", "39b", "40", "41", "42", "43", "44", "45", "46", "47", "48",
+            "49", "50", "51", "52", "53", "54", "55", "56", "57", "58", "59", "60", "61",
+            "62", "63", "64", "65", "66", "67", "68", "69", "70", "71", "72", "73", "74",
+            "75", "76", "77", "78", "79", "80", "81", "82", "83", "84", "85", "86", "87",
+            "88", "89", "90", "91", "92", "93", "94", "95", "96", "97", "98", "99");
 
     private static final String QUERY_PREFIX = "query";
     private static final String QUERY_SUFFIX = ".sql";
@@ -103,15 +101,16 @@ public class TpcdsTestProgramS3 {
         String sinkTablePath = params.getRequired("sinkTablePath");
         Boolean useTableStats = params.getBoolean("useTableStats");
         String querySelector = params.get("querySelector", "");
-        TableEnvironment tableEnvironment = prepareTableEnv(sourceTablePath, useTableStats);
+        int parallelism = params.getInt("parallelism", 4);
+        TableEnvironment tableEnvironment = prepareTableEnv(sourceTablePath, useTableStats, parallelism);
         try {
 
-            s3Client =
-                MinioClient.builder()
+            s3Client = MinioClient.builder()
                     .endpoint("http://minio.manager:9000")
                     .credentials("root", "rootroot")
                     .build();
-        } catch(Exception exception){}
+        } catch (Exception exception) {
+        }
 
         // Read queries from arg or execute all
         List<String> queries = querySelector.isEmpty() ? TPCDS_QUERIES : parseQuerySelector(querySelector);
@@ -149,7 +148,7 @@ public class TpcdsTestProgramS3 {
      * @param sourceTablePath
      * @return
      */
-    private static TableEnvironment prepareTableEnv(String sourceTablePath, Boolean useTableStats) {
+    private static TableEnvironment prepareTableEnv(String sourceTablePath, Boolean useTableStats, int parallelism) {
         // init Table Env
         EnvironmentSettings environmentSettings = EnvironmentSettings.inBatchMode();
         TableEnvironment tEnv = TableEnvironment.create(environmentSettings);
@@ -157,8 +156,9 @@ public class TpcdsTestProgramS3 {
         // config Optimizer parameters
         tEnv.getConfig()
                 .getConfiguration()
-                .setInteger(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, 4);
-        // TODO use the default shuffle mode of batch runtime mode once FLINK-23470 is implemented
+                .setInteger(ExecutionConfigOptions.TABLE_EXEC_RESOURCE_DEFAULT_PARALLELISM, parallelism);
+        // TODO use the default shuffle mode of batch runtime mode once FLINK-23470 is
+        // implemented
         tEnv.getConfig()
                 .getConfiguration()
                 .setString(
@@ -189,8 +189,7 @@ public class TpcdsTestProgramS3 {
                     builder.emptyColumnAsNull();
                     builder.lineDelimiter("\n");
                     CsvTableSource tableSource = builder.build();
-                    ConnectorCatalogTable catalogTable =
-                            ConnectorCatalogTable.source(tableSource, true);
+                    ConnectorCatalogTable catalogTable = ConnectorCatalogTable.source(tableSource, true);
                     tEnv.getCatalog(tEnv.getCurrentCatalog())
                             .ifPresent(
                                     catalog -> {
@@ -215,22 +214,21 @@ public class TpcdsTestProgramS3 {
     private static String loadFile2String(String filePath) throws Exception {
         StringBuilder stringBuilder = new StringBuilder();
         try (InputStream stream = s3Client.getObject(
-            GetObjectArgs.builder()
-            .bucket("workloads")
-            .object(filePath)
-            .build())) {
+                GetObjectArgs.builder()
+                        .bucket("workloads")
+                        .object(filePath)
+                        .build())) {
             BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
             reader.lines().forEach(s -> stringBuilder.append(s).append('\n'));
         }
         return stringBuilder.toString();
-        
+
     }
 
     private static List<String> parseQuerySelector(String querySelector) {
         ArrayList<String> queries = new ArrayList<>();
         String[] splitted = querySelector.split(",");
-        for (String query :
-                splitted) {
+        for (String query : splitted) {
             if (TPCDS_QUERIES.contains(query)) {
                 queries.add(query);
             } else {
