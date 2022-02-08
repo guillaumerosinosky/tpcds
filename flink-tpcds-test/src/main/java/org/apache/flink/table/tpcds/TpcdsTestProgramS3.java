@@ -102,9 +102,10 @@ public class TpcdsTestProgramS3 {
         Boolean useTableStats = params.getBoolean("useTableStats");
         String querySelector = params.get("querySelector", "");
         int parallelism = params.getInt("parallelism", 4);
-        TableEnvironment tableEnvironment = prepareTableEnv(sourceTablePath, useTableStats, parallelism);
-        try {
+        String processingMode = params.get("processingMode", "batch");
 
+        TableEnvironment tableEnvironment = prepareTableEnv(sourceTablePath, useTableStats, parallelism, processingMode);
+        try {
             s3Client = MinioClient.builder()
                     .endpoint("http://minio.manager:9000")
                     .credentials("root", "rootroot")
@@ -148,9 +149,12 @@ public class TpcdsTestProgramS3 {
      * @param sourceTablePath
      * @return
      */
-    private static TableEnvironment prepareTableEnv(String sourceTablePath, Boolean useTableStats, int parallelism) {
+    private static TableEnvironment prepareTableEnv(String sourceTablePath, Boolean useTableStats, int parallelism, String processingMode) {
         // init Table Env
-        EnvironmentSettings environmentSettings = EnvironmentSettings.inBatchMode();
+        EnvironmentSettings environmentSettings = 
+            processingMode.compareTo("streaming") == 0
+            ? EnvironmentSettings.inStreamingMode() 
+            : EnvironmentSettings.inBatchMode();
         TableEnvironment tEnv = TableEnvironment.create(environmentSettings);
 
         // config Optimizer parameters
