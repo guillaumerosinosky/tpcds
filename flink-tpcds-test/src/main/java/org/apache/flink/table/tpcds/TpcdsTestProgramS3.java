@@ -46,10 +46,12 @@ import java.util.List;
 
 import io.minio.MinioClient;
 import io.minio.GetObjectArgs;
-
+import io.minio.ListObjectsArgs;
+import io.minio.Result;
+import io.minio.messages.Item;
 /** End-to-end test for TPC-DS. */
 public class TpcdsTestProgramS3 {
-
+    private static List<String> tpcdsTablesPath;
     private static final List<String> TPCDS_TABLES = Arrays.asList(
             "catalog_sales",
             "catalog_returns",
@@ -104,7 +106,6 @@ public class TpcdsTestProgramS3 {
         int parallelism = params.getInt("parallelism", 4);
         String processingMode = params.get("processingMode", "batch");
 
-        TableEnvironment tableEnvironment = prepareTableEnv(sourceTablePath, useTableStats, parallelism, processingMode);
         try {
             s3Client = MinioClient.builder()
                     .endpoint("http://minio.manager:9000")
@@ -112,6 +113,28 @@ public class TpcdsTestProgramS3 {
                     .build();
         } catch (Exception exception) {
         }
+
+        tpcdsTablesPath = new ArrayList<String>();
+        String bucket = sourceTablePath.split("/")[2];
+        String basePath = sourceTablePath.split(bucket + "/")[1];
+        System.out.println(String.format("Bucket:%s - BasePath: %s", bucket, basePath));
+        for (String table: TPCDS_TABLES) {
+            Iterable<Result<Item>> results = s3Client.listObjects(
+                ListObjectsArgs.builder()
+                    .bucket(bucket)
+                    .prefix(basePath + "/" + table)
+                    .build()
+            );    
+            for (Result<Item> result : results) {
+                Item item = result.get();
+                tpcdsTablesPath.add("s3://" + bucket + "/" + item.objectName());
+                break; // we take only the first result
+            }            
+        }
+        System.out.println(tpcdsTablesPath);
+
+
+        TableEnvironment tableEnvironment = prepareTableEnv(sourceTablePath, useTableStats, parallelism, processingMode);
 
         // Read queries from arg or execute all
         List<String> queries = querySelector.isEmpty() ? TPCDS_QUERIES : parseQuerySelector(querySelector);
@@ -176,13 +199,17 @@ public class TpcdsTestProgramS3 {
         tEnv.getConfig()
                 .getConfiguration()
                 .setBoolean(OptimizerConfigOptions.TABLE_OPTIMIZER_JOIN_REORDER_ENABLED, true);
-
+        int index = 0;
+        
         // register TPC-DS tables
         TPCDS_TABLES.forEach(
                 table -> {
+                    String path = TpcdsTestProgramS3.tpcdsTablesPath.get(index);
+
                     TpcdsSchema schema = TpcdsSchemaProvider.getTableSchema(table);
                     CsvTableSource.Builder builder = CsvTableSource.builder();
-                    builder.path(sourceTablePath + FILE_SEPARATOR + table + DATA_SUFFIX);
+                    //builder.path(sourceTablePath + FILE_SEPARATOR + table + DATA_SUFFIX);
+                    builder.path(path);
                     for (int i = 0; i < schema.getFieldNames().size(); i++) {
                         builder.field(
                                 schema.getFieldNames().get(i),
